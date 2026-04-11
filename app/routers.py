@@ -137,8 +137,16 @@ async def chat_completions(
             try:
                 if provider_name.startswith("multi_router"):
                     # Use multi-provider router (supports user keys for groq/gemini)
-                    messages_as_dicts = [{"role": m.role.value if hasattr(m.role, 'value') else str(m.role), "content": m.content} for m in enriched_request.messages]
+                    messages_as_dicts = [{"role": m.role.value if hasattr(m.role, 'value') else str(m.role), "content": m.content or ""} for m in enriched_request.messages]
                     message_content = messages_as_dicts[-1]["content"] if messages_as_dicts else ""
+                    
+                    # Convert tools to dicts for multi-router
+                    tools_as_dicts = None
+                    if enriched_request.tools:
+                        tools_as_dicts = [t.model_dump() for t in enriched_request.tools]
+                    tool_choice_val = enriched_request.tool_choice
+                    if isinstance(tool_choice_val, dict):
+                        tool_choice_val = json.dumps(tool_choice_val)
                     
                     # Set user API keys if provided
                     multi_router.set_user_api_keys(user_keys if user_keys else None)
@@ -154,6 +162,8 @@ async def chat_completions(
                         message=message_content,
                         context=messages_as_dicts[:-1] if len(messages_as_dicts) > 1 else None,
                         preferred_provider=multi_preferred,
+                        tools=tools_as_dicts,
+                        tool_choice=tool_choice_val if isinstance(tool_choice_val, str) else None,
                     )
                     
                     # Clear user keys after use
@@ -166,17 +176,22 @@ async def chat_completions(
                     prompt_tokens = int(usage_meta.get("prompt_tokens") or 0)
                     completion_tokens = int(usage_meta.get("completion_tokens") or 0)
                     total_tokens = int(usage_meta.get("total_tokens") or (prompt_tokens + completion_tokens))
-                    # Convert multi-router response to ChatCompletionResponse format
+                    
+                    # Build choice with tool_calls if present
+                    choice = {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": result.get("response", "") or ""},
+                        "finish_reason": "tool_calls" if result.get("tool_calls") else "stop",
+                    }
+                    if result.get("tool_calls"):
+                        choice["tool_calls"] = result["tool_calls"]
+                    
                     return ChatCompletionResponse(
                         id=f"chatcmpl-{uuid.uuid4().hex[:8]}",
                         object="chat.completion",
                         created=int(time.time()),
                         model=result.get("metadata", {}).get("model", "unknown"),
-                        choices=[{
-                            "index": 0,
-                            "message": {"role": "assistant", "content": result.get("response", "")},
-                            "finish_reason": "stop",
-                        }],
+                        choices=[choice],
                         usage={
                             "prompt_tokens": prompt_tokens,
                             "completion_tokens": completion_tokens,
@@ -187,14 +202,23 @@ async def chat_completions(
                     # Direct provider call - check for user custom key
                     if user_keys.get(provider_name):
                         # Use user's custom API key via multi-router
-                        messages_as_dicts = [{"role": m.role.value if hasattr(m.role, 'value') else str(m.role), "content": m.content} for m in enriched_request.messages]
+                        messages_as_dicts = [{"role": m.role.value if hasattr(m.role, 'value') else str(m.role), "content": m.content or ""} for m in enriched_request.messages]
                         message_content = messages_as_dicts[-1]["content"] if messages_as_dicts else ""
+                        
+                        tools_as_dicts = None
+                        if enriched_request.tools:
+                            tools_as_dicts = [t.model_dump() for t in enriched_request.tools]
+                        tool_choice_val = enriched_request.tool_choice
+                        if isinstance(tool_choice_val, dict):
+                            tool_choice_val = json.dumps(tool_choice_val)
                         
                         multi_router.set_user_api_keys(user_keys)
                         result = multi_router.route_query(
                             message=message_content,
                             context=messages_as_dicts[:-1] if len(messages_as_dicts) > 1 else None,
                             preferred_provider=provider_name,
+                            tools=tools_as_dicts,
+                            tool_choice=tool_choice_val if isinstance(tool_choice_val, str) else None,
                         )
                         multi_router.set_user_api_keys(None)
                         
@@ -205,16 +229,21 @@ async def chat_completions(
                         prompt_tokens = int(usage_meta.get("prompt_tokens") or 0)
                         completion_tokens = int(usage_meta.get("completion_tokens") or 0)
                         total_tokens = int(usage_meta.get("total_tokens") or (prompt_tokens + completion_tokens))
+                        
+                        choice = {
+                            "index": 0,
+                            "message": {"role": "assistant", "content": result.get("response", "") or ""},
+                            "finish_reason": "tool_calls" if result.get("tool_calls") else "stop",
+                        }
+                        if result.get("tool_calls"):
+                            choice["tool_calls"] = result["tool_calls"]
+                        
                         return ChatCompletionResponse(
                             id=f"chatcmpl-{uuid.uuid4().hex[:8]}",
                             object="chat.completion",
                             created=int(time.time()),
                             model=result.get("metadata", {}).get("model", "unknown"),
-                            choices=[{
-                                "index": 0,
-                                "message": {"role": "assistant", "content": result.get("response", "")},
-                                "finish_reason": "stop",
-                            }],
+                            choices=[choice],
                             usage={
                                 "prompt_tokens": prompt_tokens,
                                 "completion_tokens": completion_tokens,

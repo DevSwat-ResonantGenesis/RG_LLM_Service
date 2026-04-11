@@ -92,6 +92,8 @@ class MultiAIRouter:
         context: Optional[List[Dict]] = None,
         preferred_provider: Optional[str] = None,
         images: Optional[List[Dict]] = None,
+        tools: Optional[List[Dict]] = None,
+        tool_choice: Optional[str] = None,
     ) -> Dict:
         provider_map = {
             "openai": "chatgpt",
@@ -165,11 +167,11 @@ class MultiAIRouter:
         for provider in available_providers:
             try:
                 if provider == "chatgpt":
-                    result = self._call_chatgpt(message, context, images)
+                    result = self._call_chatgpt(message, context, images, tools=tools, tool_choice=tool_choice)
                 elif provider == "gemini":
                     result = self._call_gemini(message, context, images)
                 elif provider == "groq":
-                    result = self._call_groq(message, context)
+                    result = self._call_groq(message, context, tools=tools, tool_choice=tool_choice)
                 elif provider == "claude":
                     result = self._call_anthropic(message, context, images)
                 else:
@@ -286,7 +288,7 @@ class MultiAIRouter:
                 return "gemini"
             return "resonant-brain"
 
-    def _call_chatgpt(self, message: str, context: Optional[List[Dict]] = None, images: Optional[List[Dict]] = None) -> Dict:
+    def _call_chatgpt(self, message: str, context: Optional[List[Dict]] = None, images: Optional[List[Dict]] = None, tools: Optional[List[Dict]] = None, tool_choice: Optional[str] = None) -> Dict:
         api_key = self._get_api_key("openai")
         if not api_key:
             return {
@@ -318,16 +320,21 @@ class MultiAIRouter:
             else:
                 messages.append({"role": "user", "content": str(message)})
 
-            response = client.chat.completions.create(
-                model="gpt-4o",
-                messages=messages,
-                temperature=0.5,
-                max_tokens=2000,
-            )
+            kwargs = {
+                "model": "gpt-4o",
+                "messages": messages,
+                "temperature": 0.5,
+                "max_tokens": 2000,
+            }
+            if tools:
+                kwargs["tools"] = tools
+                if tool_choice:
+                    kwargs["tool_choice"] = tool_choice
+            response = client.chat.completions.create(**kwargs)
 
-            return {
+            result = {
                 "provider": "chatgpt",
-                "response": response.choices[0].message.content,
+                "response": response.choices[0].message.content or "",
                 "metadata": {
                     "model": response.model,
                     "usage": {
@@ -337,6 +344,19 @@ class MultiAIRouter:
                     },
                 },
             }
+            if response.choices[0].message.tool_calls:
+                result["tool_calls"] = [
+                    {
+                        "id": tc.id,
+                        "type": tc.type,
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    }
+                    for tc in response.choices[0].message.tool_calls
+                ]
+            return result
         except Exception as exc:
             error_str = str(exc).lower()
             is_quota_error = any(x in error_str for x in ["429", "quota", "rate limit", "billing"])
@@ -439,7 +459,7 @@ class MultiAIRouter:
                 "metadata": {"error": str(exc), "quota_exceeded": is_quota_error},
             }
 
-    def _call_groq(self, message: str, context: Optional[List[Dict]] = None) -> Dict:
+    def _call_groq(self, message: str, context: Optional[List[Dict]] = None, tools: Optional[List[Dict]] = None, tool_choice: Optional[str] = None) -> Dict:
         user_groq_key = self._user_api_keys.get("groq")
         api_keys_to_try: List[str] = []
         if user_groq_key:
@@ -469,6 +489,17 @@ class MultiAIRouter:
                             })
                 messages.append({"role": "user", "content": str(message)})
 
+                request_body = {
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": messages,
+                    "temperature": 0.5,
+                    "max_tokens": 2000,
+                }
+                if tools:
+                    request_body["tools"] = tools
+                    if tool_choice:
+                        request_body["tool_choice"] = tool_choice
+
                 with httpx.Client() as client:
                     response = client.post(
                         f"{self.groq_base_url}/chat/completions",
@@ -476,12 +507,7 @@ class MultiAIRouter:
                             "Authorization": f"Bearer {api_key}",
                             "Content-Type": "application/json",
                         },
-                        json={
-                            "model": "llama-3.3-70b-versatile",
-                            "messages": messages,
-                            "temperature": 0.5,
-                            "max_tokens": 2000,
-                        },
+                        json=request_body,
                         timeout=30.0,
                     )
                     response.raise_for_status()
@@ -499,14 +525,19 @@ class MultiAIRouter:
                 if self.groq_api_keys:
                     self.groq_key_index = (key_index + 1) % len(self.groq_api_keys)
 
-                return {
+                msg = data["choices"][0]["message"]
+                result = {
                     "provider": "groq",
-                    "response": data["choices"][0]["message"]["content"],
+                    "response": msg.get("content") or "",
                     "metadata": {
                         "model": data.get("model", "llama-3.3-70b-versatile"),
                         "usage": data.get("usage", {}),
                     },
                 }
+                # Preserve tool_calls if present
+                if msg.get("tool_calls"):
+                    result["tool_calls"] = msg["tool_calls"]
+                return result
             except httpx.HTTPStatusError as exc:
                 error_detail = f"HTTP {exc.response.status_code}"
                 try:

@@ -12,9 +12,10 @@ class MessageRole(str, Enum):
 
 class Message(BaseModel):
     role: MessageRole
-    content: str
+    content: Optional[str] = None
     name: Optional[str] = None
     tool_call_id: Optional[str] = None
+    tool_calls: Optional[List["ToolCall"]] = None
 
 
 class ToolParameter(BaseModel):
