@@ -479,14 +479,21 @@ class MultiAIRouter:
                 messages = []
                 if context:
                     for msg in context:
-                        if isinstance(msg, dict) and "role" in msg and "content" in msg:
+                        if isinstance(msg, dict) and "role" in msg:
                             role = msg.get("role", "user")
-                            if role not in ["user", "assistant", "system"]:
+                            # Preserve all valid roles including "tool" for tool-calling
+                            if role not in ["user", "assistant", "system", "tool"]:
                                 role = "user"
-                            messages.append({
-                                "role": role,
-                                "content": str(msg.get("content", "")),
-                            })
+                            m = {"role": role, "content": str(msg.get("content", "") or "")}
+                            # Preserve tool_call_id for tool-result messages
+                            if msg.get("tool_call_id"):
+                                m["tool_call_id"] = msg["tool_call_id"]
+                            # Preserve tool_calls for assistant messages that invoked tools
+                            if msg.get("tool_calls"):
+                                m["tool_calls"] = msg["tool_calls"]
+                            if msg.get("name"):
+                                m["name"] = msg["name"]
+                            messages.append(m)
                 messages.append({"role": "user", "content": str(message)})
 
                 request_body = {
