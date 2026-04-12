@@ -96,6 +96,13 @@ async def chat_completions(
     elif preferred == "openai" and settings.OPENAI_API_KEY and "openai" not in fallback_order:
         fallback_order.append("openai")
     
+    # When tools are present and model is groq/*, use direct Groq provider
+    # The multi_router breaks tool calling by reconstructing messages incorrectly
+    if enriched_request.tools and enriched_request.model and "groq" in (enriched_request.model or "").lower():
+        groq_key = settings.GROQ_API_KEY or settings.GROQ_API_KEY_2
+        if groq_key:
+            fallback_order.insert(0, "groq_direct")
+    
     # Add Groq first (only provider with working quota currently)
     if "multi_router_groq" not in fallback_order:
         fallback_order.append("multi_router_groq")
@@ -135,6 +142,66 @@ async def chat_completions(
         last_error = None
         for provider_name in fallback_order:
             try:
+                if provider_name == "groq_direct":
+                    # Direct Groq API call preserving full message structure for tool calling
+                    import httpx as _httpx
+                    groq_key = settings.GROQ_API_KEY or settings.GROQ_API_KEY_2
+                    model_name = (enriched_request.model or "llama-3.3-70b-versatile").replace("groq/", "")
+                    
+                    groq_messages = []
+                    for m in enriched_request.messages:
+                        msg_dict = {"role": m.role.value if hasattr(m.role, 'value') else str(m.role), "content": m.content or ""}
+                        if m.name:
+                            msg_dict["name"] = m.name
+                        if m.tool_call_id:
+                            msg_dict["tool_call_id"] = m.tool_call_id
+                        groq_messages.append(msg_dict)
+                    
+                    groq_body = {
+                        "model": model_name,
+                        "messages": groq_messages,
+                        "temperature": enriched_request.temperature,
+                        "max_tokens": enriched_request.max_tokens,
+                    }
+                    if enriched_request.tools:
+                        groq_body["tools"] = [t.model_dump() for t in enriched_request.tools]
+                        if enriched_request.tool_choice:
+                            groq_body["tool_choice"] = enriched_request.tool_choice
+                    
+                    async with _httpx.AsyncClient(timeout=60.0) as _client:
+                        _resp = await _client.post(
+                            "https://api.groq.com/openai/v1/chat/completions",
+                            headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
+                            json=groq_body,
+                        )
+                        if _resp.status_code != 200:
+                            last_error = f"Groq direct: {_resp.status_code} {_resp.text[:200]}"
+                            continue
+                        groq_data = _resp.json()
+                    
+                    groq_msg = groq_data.get("choices", [{}])[0].get("message", {})
+                    groq_usage = groq_data.get("usage", {})
+                    choice = {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": groq_msg.get("content") or ""},
+                        "finish_reason": "tool_calls" if groq_msg.get("tool_calls") else "stop",
+                    }
+                    if groq_msg.get("tool_calls"):
+                        choice["tool_calls"] = groq_msg["tool_calls"]
+                    
+                    return ChatCompletionResponse(
+                        id=groq_data.get("id", f"chatcmpl-{uuid.uuid4().hex[:8]}"),
+                        object="chat.completion",
+                        created=groq_data.get("created", int(time.time())),
+                        model=groq_data.get("model", model_name),
+                        choices=[choice],
+                        usage={
+                            "prompt_tokens": groq_usage.get("prompt_tokens", 0),
+                            "completion_tokens": groq_usage.get("completion_tokens", 0),
+                            "total_tokens": groq_usage.get("total_tokens", 0),
+                        },
+                    )
+                
                 if provider_name.startswith("multi_router"):
                     # Use multi-provider router (supports user keys for groq/gemini)
                     messages_as_dicts = [{"role": m.role.value if hasattr(m.role, 'value') else str(m.role), "content": m.content or ""} for m in enriched_request.messages]
