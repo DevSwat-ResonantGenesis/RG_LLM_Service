@@ -60,7 +60,7 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://redis:6379/0"
 
     # Rate limiting
-    MAX_TOKENS_PER_REQUEST: int = 4096
+    MAX_TOKENS_PER_REQUEST: int = 16384
     MAX_REQUESTS_PER_MINUTE: int = 60
 
     class Config:

@@ -70,7 +70,7 @@ class OllamaProvider(BaseLLMProvider):
                         "stream": False,
                         "options": {
                             "temperature": request.temperature or 0.7,
-                            "num_predict": request.max_tokens or 2048,
+                            "num_predict": request.max_tokens or 16384,
                         }
                     }
                 )
@@ -132,7 +132,7 @@ class OllamaProvider(BaseLLMProvider):
                         "stream": True,
                         "options": {
                             "temperature": request.temperature or 0.7,
-                            "num_predict": request.max_tokens or 2048,
+                            "num_predict": request.max_tokens or 16384,
                         }
                     }
                 ) as response:

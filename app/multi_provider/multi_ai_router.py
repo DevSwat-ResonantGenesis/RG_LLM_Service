@@ -324,7 +324,7 @@ class MultiAIRouter:
                 "model": "gpt-4o",
                 "messages": messages,
                 "temperature": 0.5,
-                "max_tokens": 2000,
+                "max_tokens": 16384,
             }
             if tools:
                 kwargs["tools"] = tools
@@ -408,7 +408,7 @@ class MultiAIRouter:
 
             payload = {
                 "model": settings.ANTHROPIC_MODEL,
-                "max_tokens": 2000,
+                "max_tokens": 16384,
                 "messages": messages,
             }
             if system_message:
@@ -500,7 +500,7 @@ class MultiAIRouter:
                     "model": "llama-3.3-70b-versatile",
                     "messages": messages,
                     "temperature": 0.5,
-                    "max_tokens": 2000,
+                    "max_tokens": 16384,
                 }
                 if tools:
                     request_body["tools"] = tools

@@ -67,7 +67,7 @@ class Agent:
                 messages=messages,
                 tools=request.tools or tool_registry.get_all_tools(),
                 temperature=0.7,
-                max_tokens=2048,
+                max_tokens=16384,
             )
 
             response = await self.llm.chat_completion(completion_request)

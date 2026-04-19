@@ -46,7 +46,7 @@ class ChatCompletionRequest(BaseModel):
     model: Optional[str] = None
     provider: Optional[str] = None  # openai, anthropic, groq, gemini, etc.
     temperature: float = 0.7
-    max_tokens: int = 2048
+    max_tokens: int = 16384
     stream: bool = False
     tools: Optional[List[Tool]] = None
     tool_choice: Optional[Union[str, Dict]] = None
