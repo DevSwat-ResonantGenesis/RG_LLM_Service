@@ -90,14 +90,16 @@ async def chat_completions(
     if user_keys.get("google"):
         fallback_order.append("multi_router_gemini")
     
-    # Add preferred provider if not already added
+    # Add preferred provider first if specified
     if preferred == "anthropic" and settings.ANTHROPIC_API_KEY and "anthropic" not in fallback_order:
-        fallback_order.append("anthropic")
+        fallback_order.insert(0, "anthropic")
     elif preferred == "openai" and settings.OPENAI_API_KEY and "openai" not in fallback_order:
-        fallback_order.append("openai")
+        fallback_order.insert(0, "openai")
+    elif preferred == "tokenrouter" and settings.ANTHROPIC_BASE_URL and settings.ANTHROPIC_API_KEY:
+        fallback_order.insert(0, "anthropic")
     
-    # Add Groq first (only provider with working quota currently)
-    if "multi_router_groq" not in fallback_order:
+    # Add Groq as fallback only if not already added and no preferred provider
+    if "multi_router_groq" not in fallback_order and not preferred:
         fallback_order.append("multi_router_groq")
     
     # Add other system providers as fallbacks
@@ -107,7 +109,8 @@ async def chat_completions(
         fallback_order.append("anthropic")
     
     # Also try multi-provider router as last resort (has groq, gemini)
-    fallback_order.append("multi_router")
+    if "multi_router" not in fallback_order:
+        fallback_order.append("multi_router")
     
     if request.stream:
         # For streaming, try providers in order
@@ -531,10 +534,13 @@ async def providers_catalog(http_request: Request):
         key = _first_key(settings.ANTHROPIC_API_KEY or "")
         if not key:
             return False, []
+        base_url = settings.ANTHROPIC_BASE_URL or "https://api.anthropic.com"
+        messages_url = f"{base_url.rstrip('/')}/v1/messages"
+        models_url = f"{base_url.rstrip('/')}/v1/models"
         try:
             async with httpx.AsyncClient(timeout=5.0) as c:
                 pr = await c.post(
-                    "https://api.anthropic.com/v1/messages",
+                    messages_url,
                     headers={"x-api-key": key,
                              "anthropic-version": "2023-06-01",
                              "Content-Type": "application/json"},
@@ -546,7 +552,7 @@ async def providers_catalog(http_request: Request):
                 models = []
                 try:
                     mr = await c.get(
-                        "https://api.anthropic.com/v1/models",
+                        models_url,
                         headers={"x-api-key": key,
                                  "anthropic-version": "2023-06-01"})
                     if mr.status_code == 200:
@@ -693,7 +699,7 @@ async def providers_catalog(http_request: Request):
         {
             "id": "anthropic",
             "provider_key": "anthropic",
-            "name": "Anthropic",
+            "name": settings.ANTHROPIC_PROVIDER_NAME if settings.ANTHROPIC_BASE_URL else "Anthropic",
             "available": live_anthropic or ("anthropic" in user_byok_providers),
             "live": live_anthropic,
             "has_system_key": bool(settings.ANTHROPIC_API_KEY),
@@ -705,6 +711,24 @@ async def providers_catalog(http_request: Request):
             "tier": _tier("claude", "premium"),
             "uses_credits": True,
             "supports_byok": True,
+            "base_url": settings.ANTHROPIC_BASE_URL or None,
+        },
+        {
+            "id": "tokenrouter",
+            "provider_key": "anthropic",
+            "name": "Claude Opus 4.6" if settings.ANTHROPIC_BASE_URL == "https://api.tokenrouter.com/v1" else "TokenRouter",
+            "available": live_anthropic or bool(settings.ANTHROPIC_API_KEY and settings.ANTHROPIC_BASE_URL),
+            "live": live_anthropic,
+            "has_system_key": bool(settings.ANTHROPIC_API_KEY and settings.ANTHROPIC_BASE_URL),
+            "has_user_key": False,
+            "model": settings.ANTHROPIC_MODEL,
+            "models": [settings.ANTHROPIC_MODEL] if settings.ANTHROPIC_MODEL else [],
+            "description": "Claude Opus 4.6 via TokenRouter — vision, tools, and thinking support",
+            "capabilities": ["reasoning", "analysis", "vision", "tools", "thinking"],
+            "tier": "premium",
+            "uses_credits": True,
+            "supports_byok": False,
+            "base_url": settings.ANTHROPIC_BASE_URL,
         },
         {
             "id": "google",

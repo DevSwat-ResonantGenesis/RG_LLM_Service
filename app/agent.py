@@ -1,6 +1,7 @@
 """Agent reasoning engine with ReAct-style tool use."""
 
 import json
+import logging
 from typing import List, Optional
 
 from .config import settings
@@ -17,7 +18,9 @@ from .models import (
 )
 from .providers.openai_provider import OpenAIProvider
 from .providers.anthropic_provider import AnthropicProvider
-from .tool_executor import tool_registry
+from .tool_executor import tool_registry, execute_tool
+
+logger = logging.getLogger(__name__)
 
 
 AGENT_SYSTEM_PROMPT = """You are a DevSwat AI agent — an autonomous tool-using agent that executes tasks end-to-end.
@@ -59,13 +62,16 @@ class Agent:
         total_tokens = 0
         iteration = 0
 
+        # Tool definitions: use request-provided tools or agent-accessible tools from registry
+        tools = request.tools or tool_registry.get_all_tools()
+
         while iteration < request.max_iterations:
             iteration += 1
 
             # Get LLM response with tools
             completion_request = ChatCompletionRequest(
                 messages=messages,
-                tools=request.tools or tool_registry.get_all_tools(),
+                tools=tools,
                 temperature=0.7,
                 max_tokens=16384,
             )
@@ -84,21 +90,27 @@ class Agent:
                 # Execute each tool call
                 for tool_call in choice.tool_calls:
                     tool_name = tool_call.function.get("name", "")
-                    tool_args = tool_call.function.get("arguments", "{}")
+                    tool_args_raw = tool_call.function.get("arguments", "{}")
 
-                    # Execute tool
-                    observation = await tool_registry.execute(
+                    # Execute tool via unified registry
+                    observation = await execute_tool(
                         tool_call,
                         user_id=request.user_id,
                         conversation_id=request.conversation_id,
                     )
+
+                    # Parse args for step recording
+                    try:
+                        tool_input = json.loads(tool_args_raw) if isinstance(tool_args_raw, str) else tool_args_raw
+                    except (json.JSONDecodeError, TypeError):
+                        tool_input = {"_raw": str(tool_args_raw)}
 
                     # Record step
                     steps.append(
                         AgentStep(
                             action=AgentAction(
                                 tool=tool_name,
-                                tool_input=json.loads(tool_args) if tool_args else {},
+                                tool_input=tool_input,
                                 log=f"Using tool: {tool_name}",
                             ),
                             observation=observation,

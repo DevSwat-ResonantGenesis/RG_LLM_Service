@@ -14,10 +14,19 @@ class Settings(BaseSettings):
     )
     OPENAI_MODEL: str = "gpt-4o"
 
-    # Anthropic
+# Anthropic
     ANTHROPIC_API_KEY: Optional[str] = Field(
         default=None,
         validation_alias=AliasChoices("ANTHROPIC_API_KEY", "LLM_ANTHROPIC_API_KEY"),
+    )
+    ANTHROPIC_MODEL: str = "claude-opus-4-6"
+    ANTHROPIC_BASE_URL: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("ANTHROPIC_BASE_URL", "LLM_ANTHROPIC_BASE_URL"),
+    )
+    ANTHROPIC_PROVIDER_NAME: str = Field(
+        default="anthropic",
+        validation_alias=AliasChoices("ANTHROPIC_PROVIDER_NAME", "LLM_ANTHROPIC_PROVIDER_NAME"),
     )
     ANTHROPIC_MODEL: str = "claude-sonnet-4-5"
     ANTHROPIC_BASE_URL: Optional[str] = Field(

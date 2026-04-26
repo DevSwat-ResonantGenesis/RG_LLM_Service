@@ -20,6 +20,15 @@ Provides:
 
 from .registry import ToolDef, ToolParam, ToolRegistry, ToolCategory
 from .observability import ToolObserver, ToolCallRecord
+from .builtin_tools import (
+    CHAT_SKILL_TOOLS,
+    SKILL_ID_TO_TOOL_NAME,
+    TOOL_NAME_TO_SKILL_ID,
+    get_chat_skill_descriptions,
+    ALL_TOOLS,
+    build_registry,
+)
+from .autonomous_tool_builder import AutonomousToolBuilder, get_tool_builder
 
 __version__ = "1.0.0"
 
@@ -30,4 +39,12 @@ __all__ = [
     "ToolCategory",
     "ToolObserver",
     "ToolCallRecord",
+    "CHAT_SKILL_TOOLS",
+    "SKILL_ID_TO_TOOL_NAME",
+    "TOOL_NAME_TO_SKILL_ID",
+    "get_chat_skill_descriptions",
+    "ALL_TOOLS",
+    "build_registry",
+    "AutonomousToolBuilder",
+    "get_tool_builder",
 ]
