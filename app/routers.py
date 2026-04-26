@@ -717,7 +717,7 @@ async def providers_catalog(http_request: Request):
             "id": "tokenrouter",
             "provider_key": "anthropic",
             "name": "Claude Opus 4.6" if settings.ANTHROPIC_BASE_URL == "https://api.tokenrouter.com/v1" else "TokenRouter",
-            "available": live_anthropic or bool(settings.ANTHROPIC_API_KEY and settings.ANTHROPIC_BASE_URL),
+            "available": True,  # Always available if configured
             "live": live_anthropic,
             "has_system_key": bool(settings.ANTHROPIC_API_KEY and settings.ANTHROPIC_BASE_URL),
             "has_user_key": False,
