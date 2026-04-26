@@ -535,8 +535,11 @@ async def providers_catalog(http_request: Request):
         if not key:
             return False, []
         base_url = settings.ANTHROPIC_BASE_URL or "https://api.anthropic.com"
-        messages_url = f"{base_url.rstrip('/')}/v1/messages"
-        models_url = f"{base_url.rstrip('/')}/v1/models"
+        base = base_url.rstrip("/")
+        if not base.endswith("/v1"):
+            base = f"{base}/v1"
+        messages_url = f"{base}/messages"
+        models_url = f"{base}/models"
         try:
             async with httpx.AsyncClient(timeout=5.0) as c:
                 pr = await c.post(

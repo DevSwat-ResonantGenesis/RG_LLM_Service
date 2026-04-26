@@ -415,9 +415,14 @@ class MultiAIRouter:
             if system_message:
                 payload["system"] = system_message
 
+            base = self.anthropic_base_url.rstrip("/")
+            if not base.endswith("/v1"):
+                base = f"{base}/v1"
+            messages_url = f"{base}/messages"
+
             with httpx.Client() as client:
                 response = client.post(
-                    f"{self.anthropic_base_url}/v1/messages",
+                    messages_url,
                     headers={
                         "x-api-key": api_key,
                         "anthropic-version": "2023-06-01",
