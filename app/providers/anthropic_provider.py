@@ -23,7 +23,11 @@ class AnthropicProvider(BaseLLMProvider):
     """Anthropic Claude LLM provider."""
 
     def __init__(self):
-        self.client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+        base_url = settings.ANTHROPIC_BASE_URL or None
+        self.client = AsyncAnthropic(
+            api_key=settings.ANTHROPIC_API_KEY,
+            base_url=base_url,
+        )
         self.default_model = settings.ANTHROPIC_MODEL
 
     def _convert_messages(self, messages: List[Message]) -> tuple:

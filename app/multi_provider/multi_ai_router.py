@@ -47,6 +47,7 @@ class MultiAIRouter:
         self.groq_base_url = "https://api.groq.com/openai/v1"
 
         self.anthropic_api_key = settings.ANTHROPIC_API_KEY
+        self.anthropic_base_url = settings.ANTHROPIC_BASE_URL or "https://api.anthropic.com"
         self._user_api_keys: Dict[str, str] = {}
 
     def set_user_api_keys(self, keys: Optional[Dict[str, str]]) -> None:
@@ -416,7 +417,7 @@ class MultiAIRouter:
 
             with httpx.Client() as client:
                 response = client.post(
-                    "https://api.anthropic.com/v1/messages",
+                    f"{self.anthropic_base_url}/v1/messages",
                     headers={
                         "x-api-key": api_key,
                         "anthropic-version": "2023-06-01",

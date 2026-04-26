@@ -19,7 +19,11 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("ANTHROPIC_API_KEY", "LLM_ANTHROPIC_API_KEY"),
     )
-    ANTHROPIC_MODEL: str = "claude-3-sonnet-20240229"
+    ANTHROPIC_MODEL: str = "claude-sonnet-4-5"
+    ANTHROPIC_BASE_URL: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("ANTHROPIC_BASE_URL", "LLM_ANTHROPIC_BASE_URL"),
+    )
 
     # Gemini / Google
     GOOGLE_API_KEY: Optional[str] = Field(
