@@ -1,3 +1,4 @@
+import os
 from pydantic_settings import BaseSettings
 from pydantic import Field, AliasChoices
 from typing import Optional
@@ -14,7 +15,7 @@ class Settings(BaseSettings):
     )
     OPENAI_MODEL: str = "gpt-4o"
 
-# Anthropic
+    # Anthropic
     ANTHROPIC_API_KEY: Optional[str] = Field(
         default=None,
         validation_alias=AliasChoices("ANTHROPIC_API_KEY", "LLM_ANTHROPIC_API_KEY"),
@@ -25,13 +26,8 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("ANTHROPIC_BASE_URL", "LLM_ANTHROPIC_BASE_URL"),
     )
     ANTHROPIC_PROVIDER_NAME: str = Field(
-        default="anthropic",
+        default="Claude Opus 4.6",
         validation_alias=AliasChoices("ANTHROPIC_PROVIDER_NAME", "LLM_ANTHROPIC_PROVIDER_NAME"),
-    )
-    ANTHROPIC_MODEL: str = "claude-sonnet-4-5"
-    ANTHROPIC_BASE_URL: Optional[str] = Field(
-        default=None,
-        validation_alias=AliasChoices("ANTHROPIC_BASE_URL", "LLM_ANTHROPIC_BASE_URL"),
     )
 
     # Gemini / Google
@@ -60,7 +56,7 @@ class Settings(BaseSettings):
 
     # Default provider: openai, anthropic, local
     DEFAULT_PROVIDER: str = Field(
-        default="anthropic" if os.getenv("LLM_ANTHROPIC_BASE_URL") else "openai",
+        default="anthropic",
         validation_alias=AliasChoices("DEFAULT_PROVIDER", "LLM_DEFAULT_PROVIDER"),
     )
 
