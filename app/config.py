@@ -60,7 +60,7 @@ class Settings(BaseSettings):
 
     # Default provider: openai, anthropic, local
     DEFAULT_PROVIDER: str = Field(
-        default="openai",
+        default="anthropic" if os.getenv("LLM_ANTHROPIC_BASE_URL") else "openai",
         validation_alias=AliasChoices("DEFAULT_PROVIDER", "LLM_DEFAULT_PROVIDER"),
     )
 
