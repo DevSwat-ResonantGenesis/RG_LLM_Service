@@ -1,6 +1,7 @@
 """LLM Service API routes."""
 
 import json
+import os
 import time
 import uuid
 from typing import Optional
@@ -718,20 +719,33 @@ async def providers_catalog(http_request: Request):
         },
         {
             "id": "tokenrouter",
-            "provider_key": "anthropic",
-            "name": "Claude Opus 4.6" if settings.ANTHROPIC_BASE_URL == "https://api.tokenrouter.com/v1" else "TokenRouter",
-            "available": True,  # Always available if configured
-            "live": live_anthropic,
-            "has_system_key": bool(settings.ANTHROPIC_API_KEY and settings.ANTHROPIC_BASE_URL),
-            "has_user_key": False,
-            "model": settings.ANTHROPIC_MODEL,
-            "models": [settings.ANTHROPIC_MODEL] if settings.ANTHROPIC_MODEL else [],
-            "description": "Claude Opus 4.6 via TokenRouter — vision, tools, and thinking support",
-            "capabilities": ["reasoning", "analysis", "vision", "tools", "thinking"],
+            "provider_key": "tokenrouter",
+            "name": "TokenRouter (72 Models)",
+            "available": bool(os.getenv("TOKENROUTER_API_KEY")),
+            "live": bool(os.getenv("TOKENROUTER_API_KEY")),
+            "has_system_key": bool(os.getenv("TOKENROUTER_API_KEY")),
+            "has_user_key": "tokenrouter" in user_byok_providers,
+            "model": "google/gemini-3-flash-preview",
+            "models": [
+                "anthropic/claude-opus-4.7", "anthropic/claude-opus-4.6", "anthropic/claude-sonnet-4.6",
+                "anthropic/claude-sonnet-4", "anthropic/claude-haiku-4.5",
+                "openai/gpt-5.5", "openai/gpt-5.4", "openai/gpt-5.2", "openai/gpt-5-mini",
+                "x-ai/grok-4.3", "x-ai/grok-4.1-fast",
+                "google/gemini-3.1-pro-preview", "google/gemini-3-flash-preview",
+                "deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-flash",
+                "z-ai/glm-5.1", "z-ai/glm-5", "qwen/qwen3.6-plus", "qwen/qwen3.5-flash",
+                "openai/gpt-5.3-codex", "openai/gpt-5.1-codex-max",
+                "openai/gpt-5-image", "openai/gpt-5-image-mini",
+                "kling-v3", "MiniMax-Hailuo-2.3",
+                "openai/gpt-audio", "openai/gpt-audio-mini",
+            ],
+            "description": "TokenRouter — 72 models (text, image, video, audio) via single API key",
+            "capabilities": ["reasoning", "coding", "vision", "tools", "image", "video", "audio"],
             "tier": "premium",
             "uses_credits": True,
-            "supports_byok": False,
-            "base_url": settings.ANTHROPIC_BASE_URL,
+            "supports_byok": True,
+            "base_url": "https://api.tokenrouter.com/v1",
+            "model_categories": {"text": 55, "image": 7, "video": 7, "audio": 2},
         },
         {
             "id": "google",
