@@ -620,7 +620,7 @@ async def providers_catalog(http_request: Request):
     async def _fetch_user_byok_providers() -> set:
         if not user_id:
             return set()
-        auth_url = os.getenv("AUTH_SERVICE_URL", "http://green_auth_service:8000")
+        auth_url = os.getenv("AUTH_SERVICE_URL", "http://auth_service:8000")
         internal_key = os.getenv("AUTH_INTERNAL_SERVICE_KEY") or os.getenv("INTERNAL_SERVICE_KEY")
         headers = {"x-user-id": user_id}
         if internal_key:
