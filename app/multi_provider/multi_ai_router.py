@@ -639,7 +639,7 @@ class MultiAIRouter:
         for key_index, api_key in enumerate(api_keys_to_try):
             try:
                 with httpx.Client() as client:
-                    models_to_try = ["gemini-2.0-flash", "gemini-1.5-flash"]
+                    models_to_try = ["gemini-2.0-flash", "gemini-2.5-flash-lite"]
                     for model_name in models_to_try:
                         try:
                             response = client.post(
