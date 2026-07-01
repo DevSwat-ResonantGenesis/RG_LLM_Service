@@ -497,7 +497,7 @@ async def providers_catalog(http_request: Request):
                     headers={"x-api-key": key,
                              "anthropic-version": "2023-06-01",
                              "Content-Type": "application/json"},
-                    json={"model": "claude-3-haiku-20240307",
+                    json={"model": BUILTIN_PROVIDERS["anthropic"].default_model,
                           "max_tokens": 1,
                           "messages": [{"role": "user", "content": "hi"}]})
                 live = pr.status_code == 200
