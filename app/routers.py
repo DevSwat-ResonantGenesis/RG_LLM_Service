@@ -27,6 +27,7 @@ from .providers.anthropic_provider import AnthropicProvider
 from .providers.ollama_provider import OllamaProvider
 from .multi_provider.multi_ai_router import MultiAIRouter
 from .tool_executor import tool_registry
+from rg_llm.providers import BUILTIN_PROVIDERS
 
 
 router = APIRouter(prefix="/llm", tags=["llm"])
@@ -406,74 +407,22 @@ async def providers_catalog(http_request: Request):
             return ""
         return raw.split(",")[0].strip()
 
-    # ── Model filters — only show useful chat models ─────────────
+    # ── Model filters — only show models rg_llm actually knows how to call ──
+    # Sourced from rg_llm.providers.BUILTIN_PROVIDERS (same list chat_service
+    # and the IDE use) instead of separate per-provider heuristics, so a
+    # model retired/renamed upstream can't show up here as "live" while being
+    # rejected everywhere else.
 
-    def _filter_openai(model_id: str) -> bool:
-        low = model_id.lower()
-        # Must start with a known chat prefix
-        if not any(low.startswith(p) for p in
-                   ("gpt-3.5-turbo", "gpt-4", "gpt-5", "o1", "o3", "o4")):
-            return False
-        # Skip non-chat variants
-        if any(s in low for s in ("audio", "realtime", "transcribe", "tts",
-                                   "search", "image", "instruct", "codex",
-                                   "safeguard", "-16k")):
-            return False
-        # Skip date-stamped duplicates: -2024-08-06, -0125, -1106
-        import re
-        if re.search(r"-\d{4}-\d{2}-\d{2}$", low) or re.search(r"-\d{4}$", low):
-            return False
-        return True
-
-    def _filter_groq(model_id: str) -> bool:
-        low = model_id.lower()
-        # Skip non-chat / utility models
-        if any(s in low for s in ("whisper", "guard", "prompt-guard",
-                                   "orpheus", "allam", "compound",
-                                   "openai/gpt-oss")):
-            return False
-        return True
-
-    def _filter_gemini(model_id: str) -> bool:
-        low = model_id.lower()
-        if "gemini" not in low:
-            return False
-        # Skip internal/variant suffixes
-        if any(s in low for s in ("-001", "-002", "-exp-", "-lite",
-                                   "-image", "-preview", "-thinking",
-                                   "computer-use", "embedding")):
-            return False
-        return True
-
-    def _filter_anthropic(model_id: str) -> bool:
-        low = model_id.lower()
-        if "claude" not in low:
-            return False
-        # Skip very old dated models (pre-2025)
-        import re
-        dated = re.search(r"-(\d{8})$", low)
-        if dated and int(dated.group(1)) < 20250101:
-            return False
-        return True
-
-    # Preferred default model per provider (first match wins)
-    _PREFERRED = {
-        "groq": ["llama-3.3-70b-versatile", "llama-3.1-70b-versatile"],
-        "openai": ["gpt-4o", "gpt-5", "gpt-4o-mini"],
-        "anthropic": ["claude-sonnet-4-5", "claude-sonnet-4", "claude-3-5-sonnet"],
-        "google": ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"],
-    }
+    def _filter_known(provider_key: str, model_id: str) -> bool:
+        cfg = BUILTIN_PROVIDERS.get(provider_key)
+        return bool(cfg and model_id in cfg.models)
 
     def _pick_default(provider_key: str, models: list) -> str:
-        for pref in _PREFERRED.get(provider_key, []):
-            # Exact match first
-            if pref in models:
-                return pref
-            # Then prefix match (e.g. "claude-sonnet-4-5" → "claude-sonnet-4-5-20250929")
-            for m in models:
-                if m.startswith(pref + "-"):
-                    return m
-        return models[0] if models else ""
+        cfg = BUILTIN_PROVIDERS.get(provider_key)
+        canonical_default = cfg.default_model if cfg else ""
+        if canonical_default in models:
+            return canonical_default
+        return models[0] if models else canonical_default
 
     # ── Ping + fetch models per provider ──────────────────────────
 
@@ -499,7 +448,7 @@ async def providers_catalog(http_request: Request):
                 if mr.status_code == 200:
                     models = sorted(
                         {m["id"] for m in mr.json().get("data", [])
-                         if _filter_openai(m["id"])},
+                         if _filter_known("openai", m["id"])},
                         reverse=True)  # newest first (gpt-5 > gpt-4)
                 return live, models
         except Exception:
@@ -526,7 +475,7 @@ async def providers_catalog(http_request: Request):
                 if mr.status_code == 200:
                     models = sorted(
                         {m["id"] for m in mr.json().get("data", [])
-                         if _filter_groq(m["id"])})
+                         if _filter_known("groq", m["id"])})
                 return live, models
         except Exception:
             return False, []
@@ -568,7 +517,7 @@ async def providers_catalog(http_request: Request):
                     pass
                 if models:
                     models = sorted(
-                        {m for m in models if _filter_anthropic(m)},
+                        {m for m in models if _filter_known("anthropic", m)},
                         reverse=True) or models
                 return live, models
         except Exception:
@@ -597,7 +546,7 @@ async def providers_catalog(http_request: Request):
                         mid = name.replace("models/", "")
                         if "generateContent" in \
                                 str(m.get("supportedGenerationMethods", [])) \
-                                and _filter_gemini(mid):
+                                and _filter_known("google", mid):
                             models.append(mid)
                     models = sorted(set(models), reverse=True)
                 return live, models
