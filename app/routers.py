@@ -33,6 +33,35 @@ from rg_llm.providers import BUILTIN_PROVIDERS
 router = APIRouter(prefix="/llm", tags=["llm"])
 multi_router = MultiAIRouter()
 
+# ── Live provider-catalog cache ───────────────────────────────────────
+# The per-provider liveness ping + /v1/models fetch is user-agnostic and
+# expensive (5 real HTTP round-trips), so cache it briefly. Per-user BYOK
+# status is NOT cached — it's merged fresh on every request.
+_PROBE_TTL_SECONDS = 120.0
+_provider_probe_cache: dict = {"ts": 0.0, "data": None}
+
+# Substrings that mark a NON-chat model returned by a provider's /models
+# endpoint (embeddings, audio, image, moderation, etc.). Everything else a
+# live provider reports is surfaced — the catalog is no longer capped to a
+# hand-maintained whitelist, so newly-released models appear organically.
+_NON_CHAT_MODEL_MARKERS = (
+    "embed", "embedding", "whisper", "tts", "text-to-speech", "speech",
+    "transcribe", "dall-e", "dalle", "-image", "image-", "imagen",
+    "moderation", "rerank", "-audio", "audio-", "-video", "video-",
+    "guard", "-vision-", "aqa", "bison", "gecko",
+)
+
+
+def _is_chat_model(model_id: str) -> bool:
+    """True if a provider-reported model id looks like a usable chat/completions
+    model (not an embedding/audio/image/moderation model). Provider-agnostic;
+    replaces the old static-whitelist membership check so live discovery is the
+    source of truth."""
+    if not model_id:
+        return False
+    mid = model_id.lower()
+    return not any(marker in mid for marker in _NON_CHAT_MODEL_MARKERS)
+
 
 def get_provider(provider_name: Optional[str] = None):
     """Get the appropriate LLM provider."""
@@ -407,15 +436,12 @@ async def providers_catalog(http_request: Request):
             return ""
         return raw.split(",")[0].strip()
 
-    # ── Model filters — only show models rg_llm actually knows how to call ──
-    # Sourced from rg_llm.providers.BUILTIN_PROVIDERS (same list chat_service
-    # and the IDE use) instead of separate per-provider heuristics, so a
-    # model retired/renamed upstream can't show up here as "live" while being
-    # rejected everywhere else.
-
-    def _filter_known(provider_key: str, model_id: str) -> bool:
-        cfg = BUILTIN_PROVIDERS.get(provider_key)
-        return bool(cfg and model_id in cfg.models)
+    # ── Model surfacing — live discovery is the source of truth ──
+    # We no longer cap the catalog to a hand-maintained whitelist; every model
+    # a live provider reports (that looks like a chat model per _is_chat_model)
+    # is surfaced, so newly-released models appear organically once the
+    # provider is keyed/enabled. BUILTIN_PROVIDERS is still used only for the
+    # canonical default hint below.
 
     def _pick_default(provider_key: str, models: list) -> str:
         cfg = BUILTIN_PROVIDERS.get(provider_key)
@@ -448,7 +474,7 @@ async def providers_catalog(http_request: Request):
                 if mr.status_code == 200:
                     models = sorted(
                         {m["id"] for m in mr.json().get("data", [])
-                         if _filter_known("openai", m["id"])},
+                         if _is_chat_model(m["id"])},
                         reverse=True)  # newest first (gpt-5 > gpt-4)
                 return live, models
         except Exception:
@@ -475,7 +501,7 @@ async def providers_catalog(http_request: Request):
                 if mr.status_code == 200:
                     models = sorted(
                         {m["id"] for m in mr.json().get("data", [])
-                         if _filter_known("groq", m["id"])})
+                         if _is_chat_model(m["id"])})
                 return live, models
         except Exception:
             return False, []
@@ -517,7 +543,7 @@ async def providers_catalog(http_request: Request):
                     pass
                 if models:
                     models = sorted(
-                        {m for m in models if _filter_known("anthropic", m)},
+                        {m for m in models if _is_chat_model(m)},
                         reverse=True) or models
                 return live, models
         except Exception:
@@ -546,7 +572,7 @@ async def providers_catalog(http_request: Request):
                         mid = name.replace("models/", "")
                         if "generateContent" in \
                                 str(m.get("supportedGenerationMethods", [])) \
-                                and _filter_known("google", mid):
+                                and _is_chat_model(mid):
                             models.append(mid)
                     models = sorted(set(models), reverse=True)
                 return live, models
@@ -585,20 +611,27 @@ async def providers_catalog(http_request: Request):
             pass
         return set()
 
-    # ── Run all checks in parallel ────────────────────────────────
+    # ── Provider probes (cached ~120s, user-agnostic) + BYOK (live, per-user) ──
+    now = time.monotonic()
+    if _provider_probe_cache["data"] and \
+            now - _provider_probe_cache["ts"] < _PROBE_TTL_SECONDS:
+        probes = _provider_probe_cache["data"]
+    else:
+        probes = await asyncio.gather(
+            _check_openai(),
+            _check_groq(),
+            _check_anthropic(),
+            _check_google(),
+            _check_ollama(),
+        )
+        _provider_probe_cache["data"] = probes
+        _provider_probe_cache["ts"] = now
     ((live_openai, openai_models),
      (live_groq, groq_models),
      (live_anthropic, anthropic_models),
      (live_google, google_models),
-     (local_available, local_models),
-     user_byok_providers) = await asyncio.gather(
-        _check_openai(),
-        _check_groq(),
-        _check_anthropic(),
-        _check_google(),
-        _check_ollama(),
-        _fetch_user_byok_providers(),
-    )
+     (local_available, local_models)) = probes
+    user_byok_providers = await _fetch_user_byok_providers()
 
     # Tier labels for the frontend
     tier_label = {
